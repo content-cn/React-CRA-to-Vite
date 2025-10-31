@@ -3,16 +3,14 @@
 
 """
 convertor.py: An automated script to migrate a Create React App (CRA) project
-to a Vite project structure, including Jest to Vitest test file conversion.
+to a Vite project structure.
 
 This script performs the following actions:
 1.  Sets up a new Vite project directory.
 2.  Copies and renames source files from .js to .jsx.
-3.  Identifies Jest test files (.test.js) for specific processing.
-4.  Uses the Google Gemini API to intelligently update internal import paths within .jsx files.
-5.  Uses the Google Gemini API to convert Jest/RTL tests to Vitest syntax.
-6.  Uses the Google Gemini API to transform the CRA entry point (index.js) to Vite's main.jsx.
-7.  Creates Vite-specific configuration files (vite.config.js, package.json, etc.).
+3.  Uses the Google Gemini API to intelligently update internal import paths within .jsx files.
+4.  Uses the Google Gemini API to transform the CRA entry point (index.js) to Vite's main.jsx.
+5.  Creates Vite-specific configuration files (vite.config.js, package.json, etc.).
 
 Usage:
     python convertor.py /path/to/your/CRA_Project
@@ -31,8 +29,7 @@ import google.generativeai as genai
 # --- CONFIGURATION ---
 # IMPORTANT: Replace "YOUR_GEMINI_API_KEY" with your actual Google Gemini API key.
 GEMINI_API_KEY = "AIzaSyBl_Da3vFHEXg0l8gWGjv5_hiszu7zfkwQ"
-# If you want to use a different Gemini model, you can also add:
-GEMINI_MODEL = "gemini-2.5-flash"  # ← Optional: specify model name here
+
 # --- STATIC CONTENT FOR NEW FILES ---
 
 # A. index.html
@@ -68,12 +65,9 @@ PACKAGE_JSON_CONTENT = """
   "dependencies": {
     "firebase": "9.17.1",
     "glob": "^11.0.3",
-    "react": "^19.0.0",
-    "react-dom": "^19.0.0",
-    "react-toastify": "9.1.1", 
-    "react-router-dom": "6.9.0",
-    "react-redux": "8.0.5",
-    "redux": "4.2.1"
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "react-toastify": "9.1.1"
   },
   "devDependencies": {
     "@testing-library/jest-dom": "^6.9.1",
@@ -160,7 +154,7 @@ def call_gemini_api(prompt, content):
     Includes error handling for API calls.
     """
     try:
-        model = genai.GenerativeModel(GEMINI_MODEL)
+        model = genai.GenerativeModel('gemini-2.5-flash')
         full_prompt = f"{prompt}\n\n---\n\n{content}"
         response = model.generate_content(full_prompt)
         # Clean up the response to remove markdown code blocks
@@ -200,7 +194,7 @@ def main():
 
     # Configure Gemini API
     try:
-        genai.configure(api_key=GEMINI_API_KEY)
+        genai.configure(api_key=AIzaSyBl_Da3vFHEXg0l8gWGjv5_hiszu7zfkwQ)
     except Exception as e:
         print(f"\n❌ Error configuring Gemini API: {e}")
         sys.exit(1)
@@ -240,6 +234,8 @@ def main():
         
         # Create placeholder/empty files
         open(os.path.join(dest_public_dir, 'vite.svg'), 'w').close()
+        with open(os.path.join(dest_src_dir, 'App.test.jsx'), 'w') as f:
+            f.write("// Tests will be migrated for Vitest.")
         open(os.path.join(dest_src_dir, 'index.css'), 'w').close()
         print("✅ Vite configuration files created.")
     except IOError as e:
@@ -261,25 +257,21 @@ def main():
     
     # Process all other files in src/
     jsx_files_to_process = []
-    test_files_to_process = []
     for root, _, files in os.walk(source_src_dir):
         for filename in files:
             if filename == 'index.js':
                 continue # Skip the original entry point
 
             source_path = os.path.join(root, filename)
+            # Determine relative path to maintain sub-directory structure
             relative_path = os.path.relpath(source_path, source_src_dir)
             dest_path = os.path.join(dest_src_dir, relative_path)
+
+            # Create subdirectories in destination if they don't exist
             os.makedirs(os.path.dirname(dest_path), exist_ok=True)
             
             try:
-                # Handle test files separately for conversion
-                if filename.endswith(('.test.js', '.spec.js')):
-                    dest_path = dest_path.replace('.js', '.jsx')
-                    shutil.copy2(source_path, dest_path)
-                    test_files_to_process.append(dest_path)
-                    print(f"   Identified for Vitest conversion: {filename} -> {os.path.basename(dest_path)}")
-                elif filename.endswith('.js'):
+                if filename.endswith('.js'):
                     dest_path = dest_path[:-3] + '.jsx'
                     shutil.copy2(source_path, dest_path)
                     jsx_files_to_process.append(dest_path)
@@ -308,7 +300,7 @@ def main():
         try:
             with open(file_path, 'r+', encoding='utf-8') as f:
                 original_code = f.read()
-                print(f"      - Processing imports in {os.path.basename(file_path)}...")
+                print(f"      - Processing {os.path.basename(file_path)}...")
                 updated_code = call_gemini_api(import_update_prompt, original_code)
                 if updated_code:
                     f.seek(0)
@@ -320,67 +312,30 @@ def main():
             print(f"      - ❌ Error processing file {file_path}: {e}")
     print("   ✅ Import update task complete.")
 
-    # Task 2: Convert Jest tests to Vitest tests
-    print("\n   TASK 2: Converting Jest test files to Vitest syntax...")
-    test_file_conversion_prompt = (
-        "You are an expert test migration engineer specializing in converting Jest/React Testing Library tests to the Vitest framework. "
-        "Your task is to transform the provided test file content according to the following rules:\n"
-        "1.  Replace the import `'@testing-library/jest-dom'` with `'@testing-library/jest-dom/vitest'`.\n"
-        "2.  Convert all `jest.` API calls to their `vi.` equivalents (e.g., `jest.fn()` -> `vi.fn()`, `jest.mock()` -> `vi.mock()`, `jest.spyOn` -> `vi.spyOn`, `jest.requireActual` -> `vi.importActual`).\n"
-        "3.  The most critical rule is handling `vi.mock` when it uses a factory function that calls `vi.importActual`. The factory function MUST be converted to an `async` function, and the call to `vi.importActual` MUST be `await`ed.\n\n"
-        "Here is a specific before-and-after example of the complex mock conversion:\n"
-        "--- BEFORE ---\n"
-        "vi.mock('./utils', () => {\n"
-        "  const actual = vi.importActual('./utils');\n"
-        "  return { ...actual, someFunction: vi.fn() };\n"
-        "});\n"
-        "--- AFTER ---\n"
-        "vi.mock('./utils', async () => {\n"
-        "  const actual = await vi.importActual('./utils');\n"
-        "  return { ...actual, someFunction: vi.fn() };\n"
-        "});\n\n"
-        "Now, apply these rules to the following test file. Return ONLY the complete, new JSX code for the test file. Do not include any explanations, apologies, or markdown formatting."
-    )
-    for file_path in test_files_to_process:
-        try:
-            with open(file_path, 'r+', encoding='utf-8') as f:
-                original_code = f.read()
-                print(f"      - Converting {os.path.basename(file_path)} to Vitest...")
-                updated_code = call_gemini_api(test_file_conversion_prompt, original_code)
-                if updated_code:
-                    f.seek(0)
-                    f.write(updated_code)
-                    f.truncate()
-                else:
-                    print(f"      - ⚠️ Failed to convert {os.path.basename(file_path)}. Skipping.")
-        except Exception as e:
-            print(f"      - ❌ Error processing test file {file_path}: {e}")
-    print("   ✅ Test file conversion task complete.")
-
-    # Task 3: Convert index.js to main.jsx
-    print("\n   TASK 3: Converting CRA entry point to Vite's main.jsx...")
+    # Task 2: Convert index.js to main.jsx
+    print("\n   TASK 2: Converting CRA entry point to Vite's main.jsx...")
     main_jsx_prompt = (
-        "You are an expert React migration assistant. Convert the following Create React App `index.js` "
-        "code to be compatible with Vite's `main.jsx` format. Your output must be concise and follow modern best practices.\n"
-        "The main requirements are:\n"
-        "1. Replace `ReactDOM.render(...)` with the modern `ReactDOM.createRoot` API.\n"
-        "2. The root rendering logic MUST be a single, chained statement: `createRoot(document.getElementById('root')).render(...)`.\n"
-        "3. Ensure that if `React.StrictMode` is used, it is preserved within the render method.\n"
-        "4. Update any relative component imports (e.g., `import App from './App'`) to use the `.jsx` extension (e.g., `import App from './App.jsx'`).\n"
-        "5. Preserve all other imports, such as CSS imports (e.g., `import './index.css'`).\n\n"
-        "For example, a typical output should look like this:\n"
-        "```jsx\n"
-        "import { StrictMode } from 'react';\n"
-        "import { createRoot } from 'react-dom/client';\n"
-        "import './index.css';\n"
-        "import App from './App.jsx';\n\n"
-        "createRoot(document.getElementById('root')).render(\n"
-        "  <StrictMode>\n"
-        "    <App />\n"
-        "  </StrictMode>\n"
-        ");\n"
-        "```\n\n"
-        "Now, convert the following code. Return ONLY the complete, new `main.jsx` code block, without any explanations or surrounding markdown."
+    "You are an expert React migration assistant. Convert the following Create React App `index.js` "
+    "code to be compatible with Vite's `main.jsx` format. Your output must be concise and follow modern best practices.\n"
+    "The main requirements are:\n"
+    "1. Replace `ReactDOM.render(...)` with the modern `ReactDOM.createRoot` API.\n"
+    "2. The root rendering logic MUST be a single, chained statement: `createRoot(document.getElementById('root')).render(...)`.\n"
+    "3. Ensure that if `React.StrictMode` is used, it is preserved within the render method.\n"
+    "4. Update any relative component imports (e.g., `import App from './App'`) to use the `.jsx` extension (e.g., `import App from './App.jsx'`).\n"
+    "5. Preserve all other imports, such as CSS imports (e.g., `import './index.css'`).\n\n"
+    "For example, a typical output should look like this:\n"
+    "```jsx\n"
+    "import { StrictMode } from 'react';\n"
+    "import { createRoot } from 'react-dom/client';\n"
+    "import './index.css';\n"
+    "import App from './App.jsx';\n\n"
+    "createRoot(document.getElementById('root')).render(\n"
+    "  <StrictMode>\n"
+    "    <App />\n"
+    "  </StrictMode>\n"
+    ");\n"
+    "```\n\n"
+    "Now, convert the following code. Return ONLY the complete, new `main.jsx` code block, without any explanations or surrounding markdown."
     )
     if index_js_content:
         main_jsx_content = call_gemini_api(main_jsx_prompt, index_js_content)
@@ -402,12 +357,11 @@ def main():
     print(f"1. Navigate to your new project: cd {dest_dir}")
     print("2. Install dependencies: npm install (or yarn, or pnpm)")
     print("3. Start the development server: npm run dev")
-    print("4. Run your newly converted tests: npm run test")
     print("\nNOTE: Please review the generated package.json and add any missing dependencies from your original project.")
 
 
 if __name__ == "__main__":
-    if GEMINI_API_KEY == 'YOUR_GEMINI_API_KEY':
+    if GEMINI_API_KEY == "YOUR_GEMINI_API_KEY":
         print("\n🛑 CRITICAL ERROR: Gemini API Key is not set!")
         print("   Please open the `convertor.py` script and replace 'YOUR_GEMINI_API_KEY' with your actual key.")
         sys.exit(1)
