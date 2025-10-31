@@ -28,7 +28,7 @@ import google.generativeai as genai
 
 # --- CONFIGURATION ---
 # IMPORTANT: Replace "YOUR_GEMINI_API_KEY" with your actual Google Gemini API key.
-GEMINI_API_KEY = "AIzaSyBl_Da3vFHEXg0l8gWGjv5_hiszu7zfkwQ"
+GEMINI_API_KEY = ""
 
 # --- STATIC CONTENT FOR NEW FILES ---
 
@@ -194,7 +194,7 @@ def main():
 
     # Configure Gemini API
     try:
-        genai.configure(api_key=AIzaSyBl_Da3vFHEXg0l8gWGjv5_hiszu7zfkwQ)
+        genai.configure(api_key=API_KEY)
     except Exception as e:
         print(f"\n❌ Error configuring Gemini API: {e}")
         sys.exit(1)
